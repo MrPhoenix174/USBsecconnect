@@ -1,41 +1,67 @@
 import serial.tools.list_ports
+from cryptography.hazmat.primitives.asymmetric import ed25519
+from cryptography.hazmat.primitives import serialization
+import os 
+import json 
+import pyudev
 
+def find_usb_mount_path(target_serial):
+    context = pyudev.Context()
+    # поисск среди блочных устройств
+    for device in context.list_devices(subsystem='block', DEVTYPE='partition'):
+        # серийный номер родительского устройства
+        parent = device.find_parent('usb', 'usb_device')
+        if parent and parent.get('ID_SERIAL_SHORT') == target_serial:
+            # ищем устройство в системее
+            # !! На винде не будет рабоать
+            # TODO: сделать норм замену что бы работало на винде
+            with open('/proc/mounts', 'r') as f:
+                for line in f:
+                    if device.device_node in line:
+                        return line.split()[1] #  путь монтирования
+    return None
+
+
+
+def save_to_s_db(id_str: str, public_key_hex, db_path="server_db.json"):
+    if os.path.exists(db_path):
+        with open(db_path, 'r', encoding='utf-8') as f:
+            try:
+                db = json.load(f)
+            except json.JSONDecodeError:
+                db = []
+    else:
+        db = []
+
+    db = [entry for entry in db if entry.get("id") != id_str]
+
+    db.append({
+        "id": id_str, "public_key_hex": public_key_hex
+    })
+
+
+    with open(db_path, 'w', encoding='utf-8') as f:
+        json.dump(db, f, indent=4, ensure_ascii=False)
+    
+    print(f"Данные успешно сохранены в {db_path}")
 
 def generate_keys():
-    from cryptography.hazmat.primitives.asymmetric import ed25519
-    from cryptography.hazmat.primitives import serialization
-
+    # ключи ed25519
     private_key = ed25519.Ed25519PrivateKey.generate()
     public_key = private_key.public_key()
 
-    #  Экспорт в формате PEM для сохранеия на флешку
+    # OpenSSH формат 
     pem_private = private_key.private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.OpenSSH,
         encryption_algorithm=serialization.NoEncryption()
     )
-
-    #pem_public = public_key.public_bytes(
-    #    encoding=serialization.Encoding.PEM,
-    #    format=serialization.PublicFormat.SubjectPublicKeyInfo
-    #)   
-
-    #print("Приватный ключ (PEM):\n", pem_private.decode())
-    print("Публичный ключ (PEM):\n", pem_public.decode())
-
-    #  Получение байтов (32)
-    #raw_private = private_key.private_bytes(
-    #    encoding=serialization.Encoding.Raw,
-    #    format=serialization.PrivateFormat.Raw,
-    #    encryption_algorithm=serialization.NoEncryption()
-    #)
     raw_public = public_key.public_bytes(
         encoding=serialization.Encoding.Raw,
         format=serialization.PublicFormat.Raw
     )
-
-    #print("Сырой приватный ключ (hex):", raw_private.hex())
-    print("Сырой публичный ключ (hex):", raw_public.hex())
+    
+    return pem_private, raw_public
 
 
 def setup_usb(main_dict: dict):
@@ -50,12 +76,34 @@ def setup_usb(main_dict: dict):
         print("Все верно?(y/n)")
         c = input().strip()
         if "y" in c:
-            hwid = main_dict[d_id]["HWID"]
+            hwid = main_dict[d_id]["HWID"] # TODO: почистить
             ser_num = main_dict[d_id]['SerialNumber']
             device = main_dict[d_id]['Device']
             vid = main_dict[d_id]["VID"]
             pid = main_dict[d_id]["PID"]
-            id_str = str(hwid) + str(vid) + str(pid) + str(ser_num)
+            #id_str = str(hwid) + str(vid) + str(pid) + str(ser_num)
+            id_str = f"{main_dict[d_id]['VID']}:{main_dict[d_id]['PID']}:{main_dict[d_id]['SerialNumber']}"
+            priv_key, pub_key_raw = generate_keys()
+            #path_to_usb = f"/run/media/user/{FLASH_NAME}/private_key.pem"
+            #with open(path_to_usb, "wb") as f: f.write(priv_key)
+            print(" Поиск точки монтирования...")
+            usb_path = find_usb_mount_path(ser_num) 
+
+            if usb_path:
+                print(f"[OK] Флешка найдена: {usb_path}")
+                full_path = os.path.join(usb_path, "private_key.pem")
+                with open(usb_path, "wb") as f: f.write(priv_key)
+                print(f"Приватный ключ сохранен в {full_path}")
+
+                # запись ключа
+            else:
+                usb_path = input("Путь до флешки не найден, ведите путь к примонтированной флешке вручную: ")
+                full_path = os.path.join(usb_path, "private_key.pem")
+            print(f"Ключи сгенерированы для ID: {id_str}")
+            save_to_s_db(id_str, pub_key_raw.hex())
+            #======================
+            # Пока все готово тут =
+            #======================
 
 
 
