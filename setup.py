@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import serial.tools.list_ports
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.hazmat.primitives import serialization
