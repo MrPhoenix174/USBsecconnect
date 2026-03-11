@@ -4,6 +4,7 @@ from cryptography.hazmat.primitives import serialization
 import os 
 import json 
 import pyudev
+import time
 
 def find_usb_mount_path(target_serial):
     context = pyudev.Context()
@@ -67,7 +68,12 @@ def generate_keys():
 def setup_usb(main_dict: dict):
     print("Выберите устройство для работы (ID)")
     print("> ",end="")
-    d_id = int(input())
+    #d_id = int(input())
+    try:
+        d_id = int(input("> "))
+    except ValueError:
+        print("Ошибка: введите корректный ID устройства")
+        return 
     if d_id < 0:
         print("Неправильный ID")
     else:
@@ -89,10 +95,17 @@ def setup_usb(main_dict: dict):
             print(" Поиск точки монтирования...")
             usb_path = find_usb_mount_path(ser_num) 
 
+            #if usb_path:
+            #    print(f"[OK] Флешка найдена: {usb_path}")
+            #    full_path = os.path.join(usb_path, "private_key.pem")
+            #    with open(usb_path, "wb") as f: f.write(priv_key)
+            #    print(f"Приватный ключ сохранен в {full_path}")
             if usb_path:
                 print(f"[OK] Флешка найдена: {usb_path}")
                 full_path = os.path.join(usb_path, "private_key.pem")
-                with open(usb_path, "wb") as f: f.write(priv_key)
+                # Исправлено: открываем full_path
+                with open(full_path, "wb") as f: 
+                    f.write(priv_key)
                 print(f"Приватный ключ сохранен в {full_path}")
 
                 # запись ключа
@@ -101,9 +114,12 @@ def setup_usb(main_dict: dict):
                 full_path = os.path.join(usb_path, "private_key.pem")
             print(f"Ключи сгенерированы для ID: {id_str}")
             save_to_s_db(id_str, pub_key_raw.hex())
+            time.sleep(2)
+            print("Все готово")
             #======================
             # Пока все готово тут =
             #======================
+
 
 
 
@@ -140,7 +156,7 @@ def get_usb_flash_hwid() -> dict:
 
             i+=1
 
-    if found == False:
+    if not found :
         print("USB не найден")
     return my_dict
 
